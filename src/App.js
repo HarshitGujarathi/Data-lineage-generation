@@ -11,11 +11,13 @@ import TableNode from './TableNode';
 
 const nodeTypes = { tableNode: TableNode };
 
-const REL_OPTIONS = [
-  { value: 'oneToOne', label: '1:1 (One to One)', short: '1:1', color: '#10b981' },
-  { value: 'oneToMany', label: '1:N (One to Many)', short: '1:N', color: '#3b82f6' },
-  { value: 'manyToMany', label: 'N:M (Many to Many)', short: 'N:M', color: '#8b5cf6' },
-  { value: 'identifying', label: 'ID (Identifying)', short: '#ef4444' },
+ const REL_OPTIONS = [
+  { value: 'oneToOne', label: '1:1 (One to One)', short: '1:1', color: '#10b981' }, // Emerald
+  { value: 'oneToMany', label: '1:N (One to Many)', short: '1:N', color: '#3b82f6' }, // Blue
+  { value: 'manyToMany', label: 'N:M (Many to Many)', short: 'N:M', color: '#8b5cf6' }, // Violet
+  { value: 'identifying', label: 'Identifying', short: 'ID', color: '#ef4444' }, // Red
+  { value: 'nonIdentifying', label: 'Non-Identifying', short: 'NI', color: '#f59e0b' }, // Amber
+  { value: 'optional', label: 'Optional', short: '0:N', color: '#64748b' }, // Slate
 ];
 
 export default function App() {
@@ -185,28 +187,66 @@ export default function App() {
           </div>
 
           {/* Section 2: Relationships */}
-          <div className="pt-6 border-t border-slate-800 space-y-4">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">2. Relationships</label>
-            <div className="grid grid-cols-2 gap-2">
-              <select className="bg-slate-800 p-2 rounded text-[10px] border border-slate-700 outline-none" value={sourceTable} onChange={e => setSourceTable(e.target.value)}>
-                <option value="">Source</option>
-                {nodes.map(n => <option key={n.id} value={n.id}>{n.id}</option>)}
-              </select>
-              <select className="bg-slate-800 p-2 rounded text-[10px] border border-slate-700 outline-none" value={targetTable} onChange={e => setTargetTable(e.target.value)}>
-                <option value="">Target</option>
-                {nodes.map(n => <option key={n.id} value={n.id}>{n.id}</option>)}
-              </select>
-            </div>
-            <select className="w-full bg-slate-800 p-2 rounded text-[10px] border border-slate-700 outline-none" value={relType} onChange={e => {
-              setRelType(e.target.value);
-              setRelColor(REL_OPTIONS.find(o => o.value === e.target.value)?.color || '#3b82f6');
-            }}>
-              {REL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-            </select>
-            <button onClick={saveRelationship} style={{ backgroundColor: relColor }} className="w-full py-2 rounded font-bold flex items-center justify-center gap-2">
-              <Link size={14}/> {editingEdgeId ? 'Update Link' : 'Link Tables'}
-            </button>
-          </div>
+         {/* Section 2: Relationships */}
+<div className="pt-6 border-t border-slate-800 space-y-4">
+  <div className="flex justify-between items-center">
+    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">2. Relationships</label>
+    {editingEdgeId && (
+      <button onClick={() => {setEditingEdgeId(null); setSourceTable(''); setTargetTable('');}} className="text-red-400 hover:text-red-300">
+        <X size={14}/>
+      </button>
+    )}
+  </div>
+
+  <div className="grid grid-cols-2 gap-2">
+    <select className="bg-slate-800 p-2 rounded text-[10px] border border-slate-700 outline-none" value={sourceTable} onChange={e => setSourceTable(e.target.value)}>
+      <option value="">Source</option>
+      {nodes.map(n => <option key={n.id} value={n.id}>{n.id}</option>)}
+    </select>
+    <select className="bg-slate-800 p-2 rounded text-[10px] border border-slate-700 outline-none" value={targetTable} onChange={e => setTargetTable(e.target.value)}>
+      <option value="">Target</option>
+      {nodes.map(n => <option key={n.id} value={n.id}>{n.id}</option>)}
+    </select>
+  </div>
+
+  <select 
+    className="w-full bg-slate-800 p-2 rounded text-[10px] border border-slate-700 outline-none" 
+    value={relType} 
+    onChange={e => {
+      const opt = REL_OPTIONS.find(o => o.value === e.target.value);
+      setRelType(e.target.value);
+      if (opt) setRelColor(opt.color);
+    }}
+  >
+    {REL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+  </select>
+
+  {/* Color Presets Picker */}
+  <div className="flex flex-wrap gap-2 py-1">
+    {['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#64748b', '#ffffff'].map(color => (
+      <button
+        key={color}
+        onClick={() => setRelColor(color)}
+        className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${relColor === color ? 'border-white' : 'border-transparent'}`}
+        style={{ backgroundColor: color }}
+      />
+    ))}
+    <input 
+      type="color" 
+      value={relColor} 
+      onChange={(e) => setRelColor(e.target.value)}
+      className="w-5 h-5 bg-transparent cursor-pointer"
+    />
+  </div>
+
+  <button 
+    onClick={saveRelationship} 
+    style={{ backgroundColor: relColor }} 
+    className="w-full py-2 rounded font-bold flex items-center justify-center gap-2 text-white shadow-lg filter brightness-90 hover:brightness-110 transition-all"
+  >
+    <Link size={14}/> {editingEdgeId ? 'Update Link' : 'Link Tables'}
+  </button>
+</div>
 
           {/* Section 3: Export */}
           <div className="pt-6 border-t border-slate-800 space-y-2">

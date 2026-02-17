@@ -53,34 +53,102 @@ export default function App() {
     localStorage.setItem('legend', JSON.stringify(legend));
   }, [nodes, edges, legend]);
 
-  const addTable = () => {
-    if (!tableName || !schemaText) return;
+  // --- UPDATED ADD/UPDATE TABLE LOGIC ---
+const addTable = () => {
+  if (!tableName || !schemaText) return;
 
-    const columns = schemaText.split(',')
-      .map(item => item.trim())
-      .filter(item => item !== "")
-      .map(item => ({
-        // Fix: Explicitly remove trailing commas or special chars from the name display
-        name: item.replace(/\(pk\)/gi, '').replace(/,/g, '').trim(),
-        isPK: /\(pk\)/i.test(item)
-      }));
-    
-    const nodeData = { label: tableName, columns, color: selectedColor, onDelete: onDeleteNode, onEdit: onStartEdit };
-
-    if (editingNodeId) {
-      setNodes(nds => nds.map(n => n.id === editingNodeId ? { ...n, data: nodeData } : n));
-      setEditingNodeId(null);
-    } else {
-      const newNode = { 
-        id: `node_${Date.now()}`, 
-        type: 'tableNode', 
-        position: { x: 400, y: 150 }, 
-        data: nodeData 
-      };
-      setNodes(nds => nds.concat(newNode));
-    }
-    setTableName(''); setSchemaText('');
+  const columns = schemaText.split(',')
+    .map(item => item.trim())
+    .filter(item => item !== "")
+    .map(item => ({
+      name: item.replace(/\(pk\)/gi, '').replace(/,/g, '').trim(),
+      isPK: /\(pk\)/i.test(item)
+    }));
+  
+  const newNodeData = { 
+    label: tableName, 
+    columns, 
+    color: selectedColor, 
+    onDelete: onDeleteNode, 
+    onEdit: onStartEdit 
   };
+
+  if (editingNodeId) {
+    // FIX: Create a completely new object reference for the node
+    setNodes(nds => nds.map(n => 
+      n.id === editingNodeId 
+        ? { ...n, data: { ...newNodeData } } 
+        : n
+    ));
+    setEditingNodeId(null);
+  } else {
+    const newNode = { 
+      id: `node_${Date.now()}`, 
+      type: 'tableNode', 
+      position: { x: 400, y: 150 }, 
+      data: newNodeData 
+    };
+    setNodes(nds => nds.concat(newNode));
+  }
+  
+  // Clear inputs
+  setTableName(''); 
+  setSchemaText('');
+};
+
+// --- UPDATED EXPORT LOGIC ---
+const exportDiagram = async (format) => {
+  // Select the viewport specifically to avoid exporting the sidebar/UI
+  const flowElement = document.querySelector('.react-flow__viewport');
+  const entireFlow = document.querySelector('.react-flow');
+  const fileName = `lineage_export_${Date.now()}`;
+
+  if (!flowElement) return;
+
+  try {
+    if (format === 'json') {
+      // Create a blob to ensure large diagrams don't break the URL limit
+      const jsonString = JSON.stringify({ nodes, edges, legend }, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${fileName}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    // For PDF/Images, we use the container but ensure background is set
+    const options = { 
+      backgroundColor: '#f1f5f9',
+      style: {
+        transform: 'scale(1)', // Ensure it captures at 1:1 scale
+      }
+    };
+
+    if (format === 'pdf') {
+      const dataUrl = await toJpeg(entireFlow, { ...options, quality: 0.95 });
+      const pdf = new jsPDF('l', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${fileName}.pdf`);
+      return;
+    }
+
+    const action = format === 'svg' ? toSvg : toPng;
+    const url = await action(entireFlow, options);
+    const link = document.createElement('a');
+    link.download = `${fileName}.${format}`;
+    link.href = url;
+    link.click();
+  } catch (err) {
+    console.error("Export failed:", err);
+  }
+};
 
   const onConnect = useCallback((params) => {
     const edge = {

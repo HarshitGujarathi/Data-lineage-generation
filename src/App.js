@@ -13,7 +13,7 @@ export default function App() {
   const [nodes, setNodes] = useState(() => JSON.parse(localStorage.getItem('nodes')) || []);
   const [edges, setEdges] = useState(() => JSON.parse(localStorage.getItem('edges')) || []);
   const [tableName, setTableName] = useState('');
-  const [schemaText, setSchemaText] = useState('');
+  const [schemaText, setSchemaText] = useState(''); // Now expects: col1, col2 (pk), col3
   const [selectedColor, setSelectedColor] = useState('#fbbf24');
   const [relType, setRelType] = useState('oneToOne');
   const [edgeToDelete, setEdgeToDelete] = useState('');
@@ -37,7 +37,56 @@ export default function App() {
     updated[index][field] = value;
     setLegend(updated);
   };
+const onDeleteNode = useCallback((id) => {
+    setNodes((nds) => nds.filter((node) => node.id !== id));
+    setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
+  }, []);
 
+  const onStartEdit = useCallback((id, currentData) => {
+    setEditingNodeId(id);
+    setTableName(currentData.label);
+    // Convert array back to comma-separated string for editing
+    setSchemaText(currentData.columns.map(c => `${c.name}${c.isPK ? ' (pk)' : ''}`).join(', '));
+    setSelectedColor(currentData.color);
+  }, []);
+
+  const addTable = () => {
+    if (!tableName || !schemaText) return;
+
+    // CHANGE: Split by comma instead of newline
+    const columns = schemaText.split(',').filter(l => l.trim()).map(item => ({
+      name: item.replace(/\(pk\)/gi, '').trim(),
+      isPK: /\(pk\)/i.test(item)
+    }));
+    
+    // We pass the handlers into the data object so the Custom Node can call them
+    const nodeData = { 
+      label: tableName, 
+      columns, 
+      color: selectedColor, 
+      onDelete: onDeleteNode, 
+      onEdit: onStartEdit 
+    };
+
+    if (editingNodeId) {
+      // UPDATE EXISTING
+      setNodes(nds => nds.map(n => n.id === editingNodeId ? { ...n, data: nodeData } : n));
+      setEditingNodeId(null);
+    } else {
+      // ADD NEW
+      const newNode = { 
+        id: `node_${Date.now()}`, 
+        type: 'tableNode', 
+        position: { x: 400, y: 100 }, 
+        data: nodeData 
+      };
+      setNodes(nds => nds.concat(newNode));
+    }
+
+    // Reset Form
+    setTableName('');
+    setSchemaText('');
+  };
   const onConnect = useCallback((params) => {
     const edge = {
       ...params,

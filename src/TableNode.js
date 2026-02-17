@@ -24,6 +24,10 @@ const TableNode = ({ id, data }) => {
         className="text-white px-3 py-2 text-[11px] font-bold flex items-center justify-between"
         style={{ backgroundColor: data.color || '#334155' }}
       >
+        <div 
+          className="flex items-center gap-2 cursor-pointer flex-1 min-w-0" 
+          onClick={() => data.onEdit?.(id, data)} // Pass ID and Data back to App.js
+        ></div>
         <div className="flex items-center gap-2 cursor-pointer flex-1 min-w-0" onClick={() => data.onEdit?.(id)}>
           <Table size={14} className="opacity-70 shrink-0" />
           <span className="truncate uppercase tracking-tight">{data.label}</span>

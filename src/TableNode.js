@@ -26,14 +26,16 @@ const TableNode = ({ id, data }) => {
       >
         <div 
           className="flex items-center gap-2 cursor-pointer flex-1 min-w-0" 
-          onClick={() => data.onEdit?.(id, data)} // Pass ID and Data back to App.js
-        ></div>
-        <div className="flex items-center gap-2 cursor-pointer flex-1 min-w-0" onClick={() => data.onEdit?.(id)}>
+          onClick={() => data.onEdit?.(id, data)}
+        >
           <Table size={14} className="opacity-70 shrink-0" />
           <span className="truncate uppercase tracking-tight">{data.label}</span>
           <Edit3 size={10} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
         </div>
-        <button onClick={(e) => { e.stopPropagation(); data.onDelete?.(id); }} className="text-white/60 hover:text-white transition-colors ml-2">
+        <button 
+          onClick={(e) => { e.stopPropagation(); data.onDelete?.(id); }} 
+          className="text-white/60 hover:text-white transition-colors ml-2"
+        >
           <Trash2 size={14} />
         </button>
       </div>

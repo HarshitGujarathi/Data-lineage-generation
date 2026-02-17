@@ -162,41 +162,7 @@ const exportDiagram = async (format) => {
   }, []);
 
   // --- EXPORT OPERATIONS ---
-  const exportDiagram = async (format) => {
-    const flowElement = document.querySelector('.react-flow');
-    const fileName = `lineage_export_${Date.now()}`;
-
-    try {
-      if (format === 'json') {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ nodes, edges }));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", `${fileName}.json`);
-        downloadAnchorNode.click();
-        return;
-      }
-
-      if (format === 'pdf') {
-        const dataUrl = await toJpeg(flowElement, { backgroundColor: '#f1f5f9', quality: 0.95 });
-        const pdf = new jsPDF('l', 'mm', 'a4');
-        const imgProps = pdf.getImageProperties(dataUrl);
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-        pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`${fileName}.pdf`);
-        return;
-      }
-
-      const action = format === 'svg' ? toSvg : toPng;
-      const url = await action(flowElement, { backgroundColor: '#f1f5f9' });
-      const link = document.createElement('a');
-      link.download = `${fileName}.${format}`;
-      link.href = url;
-      link.click();
-    } catch (err) {
-      console.error("Export failed", err);
-    }
-  };
+ 
 
   return (
     <div className="flex h-screen w-screen bg-slate-100 overflow-hidden font-sans text-slate-900">

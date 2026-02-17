@@ -2,275 +2,207 @@ import React, { useState, useCallback, useEffect } from 'react';
 import ReactFlow, { 
   addEdge, Background, Controls, applyNodeChanges, applyEdgeChanges, MarkerType 
 } from 'reactflow';
-import { toPng, toJpeg, toSvg } from 'html-to-image';
-import { jsPDF } from 'jspdf';
-import download from 'downloadjs';
 import 'reactflow/dist/style.css';
-import { Layers, Link, Download, FileJson, Image as ImageIcon, FileText, X, Trash2 } from 'lucide-react';
+import { Layers, RefreshCcw, Key, Palette, Share2, Download } from 'lucide-react';
 import TableNode from './TableNode';
 
 const nodeTypes = { tableNode: TableNode };
 
- const REL_OPTIONS = [
-  { value: 'oneToOne', label: '1:1 (One to One)', short: '1:1', color: '#10b981' }, // Emerald
-  { value: 'oneToMany', label: '1:N (One to Many)', short: '1:N', color: '#3b82f6' }, // Blue
-  { value: 'manyToMany', label: 'N:M (Many to Many)', short: 'N:M', color: '#8b5cf6' }, // Violet
-  { value: 'identifying', label: 'Identifying', short: 'ID', color: '#ef4444' }, // Red
-  { value: 'nonIdentifying', label: 'Non-Identifying', short: 'NI', color: '#f59e0b' }, // Amber
-  { value: 'optional', label: 'Optional', short: '0:N', color: '#64748b' }, // Slate
+const COLORS = [
+  { name: 'Gold', hex: '#fbbf24' },
+  { name: 'Silver', hex: '#94a3b8' },
+  { name: 'Bronze', hex: '#cd7f32' },
+  { name: 'Landing', hex: '#22c55e' },
+  { name: 'Neutral', hex: '#1e293b' }
 ];
 
 export default function App() {
-  // --- State Initialization ---
   const [nodes, setNodes] = useState(() => JSON.parse(localStorage.getItem('nodes')) || []);
   const [edges, setEdges] = useState(() => JSON.parse(localStorage.getItem('edges')) || []);
   const [tableName, setTableName] = useState('');
   const [schemaText, setSchemaText] = useState('');
+  const [selectedColor, setSelectedColor] = useState(COLORS[4].hex);
   const [editingNodeId, setEditingNodeId] = useState(null);
-  
-  const [sourceTable, setSourceTable] = useState('');
-  const [targetTable, setTargetTable] = useState('');
-  const [relType, setRelType] = useState('oneToMany');
-  const [relColor, setRelColor] = useState('#3b82f6');
-  const [editingEdgeId, setEditingEdgeId] = useState(null);
 
-  // --- Persistence ---
+  const [sourceHandle, setSourceHandle] = useState('');
+  const [targetHandle, setTargetHandle] = useState('');
+  const [relType, setRelType] = useState('oneToOne');
+
   useEffect(() => {
     localStorage.setItem('nodes', JSON.stringify(nodes));
     localStorage.setItem('edges', JSON.stringify(edges));
   }, [nodes, edges]);
 
-  // --- Node Handlers (Defined early to prevent initialization errors) ---
-  const onDelete = useCallback((id) => {
-    setNodes(nds => nds.filter(n => n.id !== id));
-    setEdges(eds => eds.filter(e => e.source !== id && e.target !== id));
-  }, []);
+  // FIX: Handles commas as separators and strips data types strictly
+  const parseSchema = (text) => {
+    return text.split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map(line => {
+        const isPK = /\(pk\)|\(key\)/i.test(line);
+        // Clean name: removes (pk), datatypes, and any trailing commas
+        const name = line
+          .replace(/\(pk\)|\(key\)/gi, '')
+          .replace(/[,;]/g, '') // Remove separators like commas or semicolons
+          .replace(/\s+(VARCHAR|STRING|INT|TIMESTAMP|DATE|NUMBER|DECIMAL|FLOAT|BOOLEAN|BIGINT).*/gi, '')
+          .trim();
+        return { name, isPK };
+      });
+  };
+
+  const clearCanvas = () => {
+    if (window.confirm("Delete all data and reset?")) {
+      localStorage.clear();
+      window.location.reload();
+    }
+  };
 
   const onEdit = useCallback((id) => {
-    setNodes((nds) => {
-      const nodeToEdit = nds.find(n => n.id === id);
-      if (nodeToEdit) {
-        setEditingNodeId(id);
-        setTableName(nodeToEdit.id);
-        const text = nodeToEdit.data.columns
-          .map(c => `${c.name} ${c.type}${c.isPK ? ' pk' : ''}`)
-          .join('\n');
-        setSchemaText(text);
-      }
-      return nds;
-    });
-  }, []);
-
-  // Sync actions to nodes
-  useEffect(() => {
-    setNodes(nds => nds.map(node => ({
-      ...node,
-      data: { ...node.data, onEdit, onDelete, id: node.id }
-    })));
-  }, [onEdit, onDelete]);
+    const node = nodes.find(n => n.id === id);
+    if (node) {
+      setEditingNodeId(id);
+      setTableName(node.data.label);
+      setSelectedColor(node.data.color || COLORS[4].hex);
+      // Ensures "clean" text appears in the editor (no VARCHAR, no commas)
+      const text = node.data.columns
+        .map(c => `${c.name}${c.isPK ? ' (pk)' : ''}`)
+        .join('\n');
+      setSchemaText(text);
+    }
+  }, [nodes]);
 
   const addTable = () => {
     if (!tableName || !schemaText) return;
-    const columns = schemaText.split('\n').filter(line => line.trim()).map(line => {
-     const parts = line.trim().split(/[,\s]+/).filter(Boolean);
-      return { 
-        name: parts[0], 
-        type: parts[1] || 'VARCHAR', 
-        isPK: parts.some(p => p.toLowerCase() === 'pk') 
-      };
-    });
+    const columns = parseSchema(schemaText);
+    const newNodeData = { 
+      label: tableName, columns, color: selectedColor, onEdit, 
+      onDelete: (id) => setNodes(nds => nds.filter(n => n.id !== id)) 
+    };
 
     if (editingNodeId) {
-      setNodes(nds => nds.map(node => 
-        node.id === editingNodeId 
-          ? { ...node, id: tableName, data: { ...node.data, id: tableName, label: tableName, columns } } 
-          : node
-      ));
-      if (editingNodeId !== tableName) {
-        setEdges(eds => eds.map(edge => ({
-          ...edge,
-          source: edge.source === editingNodeId ? tableName : edge.source,
-          target: edge.target === editingNodeId ? tableName : edge.target
-        })));
-      }
+      setNodes(nds => nds.map(n => n.id === editingNodeId ? { ...n, data: { ...newNodeData, id: n.id } } : n));
       setEditingNodeId(null);
     } else {
-      setNodes(nds => nds.concat({
-        id: tableName,
-        type: 'tableNode',
-        position: { x: Math.random() * 300, y: Math.random() * 300 },
-        data: { id: tableName, label: tableName, columns, onEdit, onDelete }
-      }));
+      const id = `node_${Date.now()}`;
+      setNodes(nds => nds.concat({ id, type: 'tableNode', position: { x: 350, y: 150 }, data: { ...newNodeData, id } }));
     }
     setTableName(''); setSchemaText('');
   };
 
-  // --- Relationship Actions ---
-  const onEdgeClick = useCallback((event, edge) => {
-    setEditingEdgeId(edge.id);
-    setSourceTable(edge.source);
-    setTargetTable(edge.target);
-    setRelColor(edge.style.stroke);
-    const opt = REL_OPTIONS.find(o => o.short === edge.label);
-    if(opt) setRelType(opt.value);
-  }, []);
+  const linkTables = () => {
+    if (!sourceHandle || !targetHandle) return;
+    const [sId, sCol] = sourceHandle.split('|');
+    const [tId, tCol] = targetHandle.split('|');
+    const isOneToMany = relType === 'oneToMany';
 
-  const saveRelationship = () => {
-    if (!sourceTable || !targetTable) return;
-    const selectedOpt = REL_OPTIONS.find(o => o.value === relType);
-    const edgeConfig = {
-      label: selectedOpt?.short || '1:N',
-      markerEnd: { type: MarkerType.ArrowClosed, color: relColor },
-      style: { stroke: relColor, strokeWidth: 2 },
-      labelBgStyle: { fill: relColor, fillOpacity: 1 },
-      labelStyle: { fill: '#fff', fontWeight: 800, fontSize: 10 },
+    const newEdge = {
+      id: `e-${sId}${sCol}-${tId}${tCol}`,
+      source: sId, sourceHandle: sCol,
+      target: tId, targetHandle: tCol,
+      animated: true,
+      markerEnd: { 
+        type: isOneToMany ? MarkerType.Arrow : MarkerType.ArrowClosed, 
+        color: '#3b82f6', width: 25, height: 25 
+      },
+      style: { strokeWidth: 2, stroke: '#3b82f6' },
     };
-
-    if (editingEdgeId) {
-      setEdges(eds => eds.map(e => e.id === editingEdgeId ? { ...e, source: sourceTable, target: targetTable, ...edgeConfig } : e));
-    } else {
-      const newEdge = {
-        id: `e-${Date.now()}`,
-        source: sourceTable,
-        target: targetTable,
-        type: 'smoothstep',
-        ...edgeConfig
-      };
-      setEdges((eds) => addEdge(newEdge, eds));
-    }
-    setEditingEdgeId(null); setSourceTable(''); setTargetTable('');
+    setEdges((eds) => addEdge(newEdge, eds));
   };
-
-  // --- Export Function ---
-  const onExport = async (type) => {
-    const element = document.querySelector('.react-flow__viewport');
-    if (!element) return;
-    const options = { backgroundColor: '#ffffff', quality: 1 };
-    try {
-      if (type === 'png') download(await toPng(element, options), `schema-${Date.now()}.png`);
-      if (type === 'pdf') {
-        const img = await toPng(element, options);
-        const pdf = new jsPDF('l', 'px', [element.offsetWidth, element.offsetHeight]);
-        pdf.addImage(img, 'PNG', 0, 0, element.offsetWidth, element.offsetHeight);
-        pdf.save(`schema-${Date.now()}.pdf`);
-      }
-      if (type === 'json') {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ nodes, edges }));
-        download(dataStr, "lineage-backup.json");
-      }
-    } catch (err) { console.error(err); }
-  };
-
-  const onNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
-  const onEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
 
   return (
-    <div className="flex h-screen w-screen bg-slate-50 font-sans text-slate-900">
-      <aside className="w-80 h-full bg-slate-900 text-white p-6 shadow-2xl z-20 flex flex-col overflow-y-auto">
-        <div className="flex items-center gap-3 mb-8">
-          <Layers size={24} className="text-blue-500" />
-          <h1 className="text-xl font-bold tracking-tight text-white">LineagePro</h1>
+    <div className="flex h-screen w-screen bg-slate-100 overflow-hidden font-sans">
+      <aside className="w-80 h-full bg-[#0f172a] text-white p-6 flex flex-col z-50 shadow-2xl overflow-y-auto border-r border-slate-800">
+        <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <Layers className="text-blue-500" />
+            <span className="text-xl font-bold tracking-tight">LineagePro</span>
+          </div>
+          <button onClick={clearCanvas} className="text-slate-500 hover:text-red-400 p-2 transition-colors">
+            <RefreshCcw size={18} />
+          </button>
         </div>
 
-        <div className="flex-1 space-y-6">
-          {/* Section 1: Schema Input */}
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{editingNodeId ? 'Edit Table' : '1. Schema Input'}</label>
-              {editingNodeId && <button onClick={() => {setEditingNodeId(null); setTableName(''); setSchemaText('');}}><X size={14}/></button>}
+        <div className="space-y-6">
+          <section>
+            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-2">1. Table Identity</label>
+            <input 
+              className="w-full bg-[#1e293b] border border-slate-700 p-2.5 rounded text-sm mb-4 outline-none focus:border-blue-500 transition-colors" 
+              value={tableName} 
+              onChange={e => setTableName(e.target.value)} 
+              placeholder="DB.SCHEMA.TABLE" 
+            />
+            
+            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-2">Header Color</label>
+            <div className="flex gap-3 mb-4">
+              {COLORS.map(c => (
+                <button 
+                  key={c.hex} 
+                  onClick={() => setSelectedColor(c.hex)} 
+                  className={`w-6 h-6 rounded-full border-2 transition-transform ${selectedColor === c.hex ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-40 hover:opacity-100'}`} 
+                  style={{ backgroundColor: c.hex }} 
+                />
+              ))}
             </div>
-            <input className="w-full bg-slate-800 border border-slate-700 p-2 rounded text-sm outline-none focus:border-blue-500" placeholder="Table Name" value={tableName} onChange={e => setTableName(e.target.value)} />
-            <textarea className="w-full bg-slate-800 border border-slate-700 p-2 rounded h-40 text-xs font-mono outline-none focus:border-blue-500" placeholder="id, INT, pk&#10;name, VARCHAR" value={schemaText}  onChange={e => setSchemaText(e.target.value)} />
-            <button onClick={addTable} className={`w-full py-2 rounded font-bold transition ${editingNodeId ? 'bg-amber-600' : 'bg-blue-600'}`}>
+
+            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-2">Columns (Name (pk))</label>
+            <textarea 
+              className="w-full bg-[#1e293b] border border-slate-700 p-2.5 rounded h-32 text-xs font-mono mb-4 outline-none focus:border-blue-500 transition-colors" 
+              value={schemaText} 
+              onChange={e => setSchemaText(e.target.value)} 
+              placeholder="COL_NAME (pk)&#10;OTHER_COL VARCHAR" 
+            />
+            
+            <button 
+              onClick={addTable} 
+              className={`w-full py-3 rounded font-bold text-sm shadow-xl active:scale-95 transition-all ${editingNodeId ? 'bg-orange-600 hover:bg-orange-500' : 'bg-blue-600 hover:bg-blue-500'}`}
+            >
               {editingNodeId ? 'Update Table' : 'Add Table'}
             </button>
-          </div>
+          </section>
 
-          {/* Section 2: Relationships */}
-         {/* Section 2: Relationships */}
-<div className="pt-6 border-t border-slate-800 space-y-4">
-  <div className="flex justify-between items-center">
-    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">2. Relationships</label>
-    {editingEdgeId && (
-      <button onClick={() => {setEditingEdgeId(null); setSourceTable(''); setTargetTable('');}} className="text-red-400 hover:text-red-300">
-        <X size={14}/>
-      </button>
-    )}
-  </div>
-
-  <div className="grid grid-cols-2 gap-2">
-    <select className="bg-slate-800 p-2 rounded text-[10px] border border-slate-700 outline-none" value={sourceTable} onChange={e => setSourceTable(e.target.value)}>
-      <option value="">Source</option>
-      {nodes.map(n => <option key={n.id} value={n.id}>{n.id}</option>)}
-    </select>
-    <select className="bg-slate-800 p-2 rounded text-[10px] border border-slate-700 outline-none" value={targetTable} onChange={e => setTargetTable(e.target.value)}>
-      <option value="">Target</option>
-      {nodes.map(n => <option key={n.id} value={n.id}>{n.id}</option>)}
-    </select>
-  </div>
-
-  <select 
-    className="w-full bg-slate-800 p-2 rounded text-[10px] border border-slate-700 outline-none" 
-    value={relType} 
-    onChange={e => {
-      const opt = REL_OPTIONS.find(o => o.value === e.target.value);
-      setRelType(e.target.value);
-      if (opt) setRelColor(opt.color);
-    }}
-  >
-    {REL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-  </select>
-
-  {/* Color Presets Picker */}
-  <div className="flex flex-wrap gap-2 py-1">
-    {['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#64748b', '#ffffff'].map(color => (
-      <button
-        key={color}
-        onClick={() => setRelColor(color)}
-        className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${relColor === color ? 'border-white' : 'border-transparent'}`}
-        style={{ backgroundColor: color }}
-      />
-    ))}
-    <input 
-      type="color" 
-      value={relColor} 
-      onChange={(e) => setRelColor(e.target.value)}
-      className="w-5 h-5 bg-transparent cursor-pointer"
-    />
-  </div>
-
-  <button 
-    onClick={saveRelationship} 
-    style={{ backgroundColor: relColor }} 
-    className="w-full py-2 rounded font-bold flex items-center justify-center gap-2 text-white shadow-lg filter brightness-90 hover:brightness-110 transition-all"
-  >
-    <Link size={14}/> {editingEdgeId ? 'Update Link' : 'Link Tables'}
-  </button>
-</div>
-
-          {/* Section 3: Export */}
-          <div className="pt-6 border-t border-slate-800 space-y-2">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">3. Export</label>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => onExport('png')} className="bg-slate-800 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-2"><ImageIcon size={12}/> PNG</button>
-              <button onClick={() => onExport('pdf')} className="bg-slate-800 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-2"><FileText size={12}/> PDF</button>
-              <button onClick={() => onExport('json')} className="col-span-2 bg-slate-800 p-2 rounded text-[10px] font-bold flex items-center justify-center gap-2"><FileJson size={12}/> Backup JSON</button>
+          <section className="pt-6 border-t border-slate-800">
+            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-3">2. Relationships</label>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <select className="bg-[#1e293b] text-[10px] p-2 rounded border border-slate-700 outline-none hover:border-slate-500" value={sourceHandle} onChange={e => setSourceHandle(e.target.value)}>
+                <option value="">Source</option>
+                {nodes.flatMap(n => n.data.columns.map(c => <option key={`s-${n.id}-${c.name}`} value={`${n.id}|${c.name}`}>{n.data.label}.{c.name}</option>))}
+              </select>
+              <select className="bg-[#1e293b] text-[10px] p-2 rounded border border-slate-700 outline-none hover:border-slate-500" value={targetHandle} onChange={e => setTargetHandle(e.target.value)}>
+                <option value="">Target</option>
+                {nodes.flatMap(n => n.data.columns.map(c => <option key={`t-${n.id}-${c.name}`} value={`${n.id}|${c.name}`}>{n.data.label}.{c.name}</option>))}
+              </select>
             </div>
-          </div>
+            <select className="w-full bg-[#1e293b] text-[10px] p-2 rounded border border-slate-700 mb-3 outline-none" value={relType} onChange={e => setRelType(e.target.value)}>
+              <option value="oneToOne">1:1 (Direct Arrow)</option>
+              <option value="oneToMany">1:N (One to Many)</option>
+            </select>
+            <button onClick={linkTables} className="w-full py-2 bg-blue-500/10 text-blue-400 border border-blue-500/30 rounded flex items-center justify-center gap-2 text-[11px] font-bold hover:bg-blue-600 hover:text-white transition-all shadow-md">
+              <Share2 size={14} /> Link Tables
+            </button>
+          </section>
+
+          <section className="pt-6 border-t border-slate-800">
+            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-3 flex items-center gap-2">
+              <Download size={12} /> 3. Export Data
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button className="bg-slate-800 p-2 rounded text-[10px] font-bold hover:bg-slate-700 transition-colors">JSON</button>
+              <button className="bg-slate-800 p-2 rounded text-[10px] font-bold hover:bg-slate-700 transition-colors">SVG</button>
+              <button className="bg-blue-600/20 text-blue-400 p-2 rounded text-[10px] font-bold border border-blue-500/20 hover:bg-blue-600 hover:text-white transition-colors">PDF</button>
+            </div>
+          </section>
         </div>
       </aside>
 
-      <main className="flex-1 h-full relative">
+      <main className="flex-1 bg-slate-200">
         <ReactFlow 
-          nodes={nodes} 
-          edges={edges} 
-          onNodesChange={onNodesChange} 
-          onEdgesChange={onEdgesChange} 
-          onEdgeClick={onEdgeClick}
-          nodeTypes={nodeTypes} 
+          nodes={nodes} edges={edges} 
+          onNodesChange={(c) => setNodes(n => applyNodeChanges(c, n))}
+          onEdgesChange={(c) => setEdges(e => applyEdgeChanges(c, e))}
+          nodeTypes={nodeTypes}
           fitView
         >
-          <Background color="#cbd5e1" variant="dots" gap={20} /> 
+          <Background color="#94a3b8" variant="dots" />
           <Controls />
         </ReactFlow>
       </main>
